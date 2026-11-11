@@ -1,6 +1,5 @@
 name: build
 
-# 只需在 GitHub 网页上点一下 Run workflow，等 2 分钟
 on:
   workflow_dispatch:
 
@@ -9,6 +8,11 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+
+      - name: Unzip sources
+        run: |
+          unzip -o aweme-comment-ios.zip -d src_unzipped
+          find src_unzipped -type f | sort
 
       - name: Show toolchain
         run: |
@@ -19,6 +23,9 @@ jobs:
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           mkdir -p out
+          ROOT=$(dirname "$(dirname "$(find src_unzipped -name Tweak.m | head -1)")")
+          echo "ROOT=$ROOT"
+          ls -la "$ROOT"
           xcrun -sdk iphoneos clang \
             -arch arm64 \
             -dynamiclib \
@@ -27,10 +34,10 @@ jobs:
             -miphoneos-version-min=15.0 \
             -install_name @executable_path/Frameworks/AwemeComment.dylib \
             -framework Foundation -framework UIKit \
-            -I include -Isrc \
+            -I "$ROOT/include" \
             -O2 \
             -o out/AwemeComment.dylib \
-            src/Tweak.m src/RuleEngine.m src/ACProbeShower.m
+            "$ROOT/src/Tweak.m" "$ROOT/src/RuleEngine.m" "$ROOT/src/ACProbeShower.m"
 
       - name: Verify
         run: |
