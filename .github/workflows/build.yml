@@ -1,0 +1,45 @@
+name: build
+
+# 只需在 GitHub 网页上点一下 Run workflow，等 2 分钟
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Compile dylib
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          mkdir -p out
+          xcrun -sdk iphoneos clang \
+            -arch arm64 \
+            -dynamiclib \
+            -fobjc-arc \
+            -isysroot "$SDK" \
+            -miphoneos-version-min=15.0 \
+            -install_name @executable_path/Frameworks/AwemeComment.dylib \
+            -framework Foundation -framework UIKit \
+            -I include -Isrc \
+            -O2 \
+            -o out/AwemeComment.dylib \
+            src/Tweak.m src/RuleEngine.m src/ACProbeShower.m
+
+      - name: Verify
+        run: |
+          file out/AwemeComment.dylib
+          xcrun -sdk iphoneos otool -L out/AwemeComment.dylib
+          ls -la out
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: AwemeComment-dylib
+          path: out/AwemeComment.dylib
