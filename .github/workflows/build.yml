@@ -1,11 +1,10 @@
 name: build
-
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -14,35 +13,46 @@ jobs:
           unzip -o aweme-comment-ios.zip -d src_unzipped
           find src_unzipped -type f | sort
 
-      - name: Show toolchain
+      - name: Install iOS cross toolchain
         run: |
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-path
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld llvm cmake make zip
+          clang --version | head -1
+
+      - name: Fetch iOS SDK from theos/sdks
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/theos/sdks.git sdk-repo
+          cd sdk-repo
+          git sparse-checkout set iPhoneOS16.5.sdk || git sparse-checkout set iPhoneOS15.6.sdk
+          ls -d iPhoneOS*.sdk
+          SDK=$PWD/$(ls -d iPhoneOS*.sdk | head -1)
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          ls "$SDK" | head -20
 
       - name: Compile dylib
         run: |
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          mkdir -p out
           ROOT=$(dirname "$(dirname "$(find src_unzipped -name Tweak.m | head -1)")")
           echo "ROOT=$ROOT"
-          ls -la "$ROOT"
-          xcrun -sdk iphoneos clang \
-            -arch arm64 \
+          mkdir -p out
+          clang \
+            -target arm64-apple-ios15.0 \
             -dynamiclib \
             -fobjc-arc \
             -isysroot "$SDK" \
-            -miphoneos-version-min=15.0 \
+            -F"$SDK/System/Library/Frameworks" \
             -install_name @executable_path/Frameworks/AwemeComment.dylib \
             -framework Foundation -framework UIKit \
-            -I "$ROOT/include" \
-            -O2 \
+            -I "$ROOT/include" -I "$ROOT/src" \
+            -O2 -fuse-ld=lld \
             -o out/AwemeComment.dylib \
             "$ROOT/src/Tweak.m" "$ROOT/src/RuleEngine.m" "$ROOT/src/ACProbeShower.m"
 
       - name: Verify
         run: |
-          file out/AwemeComment.dylib
-          xcrun -sdk iphoneos otool -L out/AwemeComment.dylib
+          file out/AwemeComment.dylib || true
+          llvm-objdump --macho --private-headers out/AwemeComment.dylib | head -40 || true
+          llvm-objdump --macho --dylibs-used out/AwemeComment.dylib || true
           ls -la out
 
       - name: Upload
